@@ -1,29 +1,32 @@
 package id.learn.dynamicwhere.search;
 
-import static id.learn.dynamicwhere.utils.DateUtil.toDate;
 import static java.util.Objects.nonNull;
+import static java.util.stream.Collectors.toList;
+
 
 import id.learn.dynamicwhere.utils.DateUtil;
-import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.function.Function;
 import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.Predicate;
 import javax.persistence.criteria.Root;
-import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.data.jpa.domain.Specification;
 
 /**
- * Project Name     : dynamic-where
- * Date Time        : 6/10/2020
+ * GenericSpecification.
  *
- * @author Teten Nugraha
- */
+ * @author Ravikumar.Beli@blueyonder.com
+ * @project plan-sop-process-orchestration
+ * @created on 13 Aug, 2021 9:28 PM
+ **/
 
+@Slf4j
 public class GenericSpecification<T> implements Specification<T> {
 
     private static final long serialVersionUID = 1900581010229669687L;
@@ -34,17 +37,22 @@ public class GenericSpecification<T> implements Specification<T> {
         this.list = new ArrayList<>();
     }
 
+    /**
+     * Add search criteria to the list.
+     *
+     * @param criteria the search criteria to build JPA specification
+     */
     public void add(SearchCriteria criteria) {
         if (nonNull(criteria.getPair().getValue())) {
             list.add(criteria);
         }
     }
 
-    @SneakyThrows
     @Override
     public Predicate toPredicate(Root<T> root, CriteriaQuery<?> query, CriteriaBuilder builder) {
 
         //create a new predicate list
+        log.info("List of filters added = {}", list);
         List<Predicate> predicates = new ArrayList<>();
 
         //add criteria to predicates
@@ -52,58 +60,50 @@ public class GenericSpecification<T> implements Specification<T> {
 
             switch (criteria.getOperation()) {
                 case EQUAL:
-                    predicates.add(builder.equal(
-                        root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString()));
+                    predicates.add(equalTo(root, builder, criteria));
                     break;
                 case GREATER_THAN:
-                    predicates.add(builder.greaterThan(
-                        root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString()));
+                    predicates.add(greaterThan(root, builder, criteria));
                     break;
                 case LESS_THAN:
-                    predicates.add(builder.lessThan(
-                        root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString()));
+                    predicates.add(lessThan(root, builder, criteria));
                     break;
                 case GREATER_THAN_EQUAL:
-                    predicates.add(builder.greaterThanOrEqualTo(
-                        root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString()));
+                    predicates.add(greaterThanOrEqualTo(root, builder, criteria));
                     break;
                 case LESS_THAN_EQUAL:
-                    predicates.add(builder.lessThanOrEqualTo(
-                        root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString()));
+                    predicates.add(lessThanOrEqualTo(root, builder, criteria));
                     break;
                 case NOT_EQUAL:
-                    predicates.add(builder.notEqual(
-                        root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString()));
+                    predicates.add(notEqual(root, builder, criteria));
                     break;
                 case MATCH:
-                    predicates.add(builder.like(
-                        builder.lower(root.get(criteria.getPair().getKey())),
-                        "%" + criteria.getPair().getValue().toString().toLowerCase() + "%"));
+                    predicates.add(match(root, builder, criteria));
                     break;
                 case MATCH_START:
-                    predicates.add(builder.like(
-                        builder.lower(root.get(criteria.getPair().getKey())),
-                        "%" + criteria.getPair().getValue().toString().toLowerCase()));
+                    predicates.add(matchStart(root, builder, criteria));
                     break;
                 case MATCH_END:
-                    predicates.add(builder.like(
-                        builder.lower(root.get(criteria.getPair().getKey())),
-                        criteria.getPair().getValue().toString().toLowerCase() + "%"));
+                    predicates.add(matchEnd(root, builder, criteria));
                     break;
                 case BETWEEN_INT:
-                    Pair<Integer, Integer> intPair = getIntPair((String) criteria.getPair().getValue());
-                    if (nonNull(intPair)) {
-                        predicates.add(builder.between(
-                            root.get(criteria.getPair().getKey()), intPair.getLeft(), intPair.getRight()));
+                    Predicate betweenIntPair = betweenIntPair(root, builder, criteria);
+                    if (nonNull(betweenIntPair)) {
+                        predicates.add(betweenIntPair);
                     }
                     break;
                 case BETWEEN_DATES:
-                    Pair<Date, Date> datePair = getDatePair((String) criteria.getPair().getValue());
-                    if (nonNull(datePair)) {
-                        predicates.add(builder.between(
-                            root.get(criteria.getPair().getKey()), datePair.getLeft(), datePair.getRight()));
+                    Predicate betweenDatePair = betweenDatePair(root, builder, criteria);
+                    if (nonNull(betweenDatePair)) {
+                        predicates.add(betweenDatePair);
                     }
                     break;
+                case IN:
+                    log.debug("column = {}, values = {}", criteria.getPair().getKey(),
+                        (List) criteria.getPair().getValue());
+                    predicates.add(root.get(criteria.getPair().getKey()).in((List) criteria.getPair().getValue()));
+                    break;
+
                 default:
                     //do nothing
             }
@@ -112,20 +112,121 @@ public class GenericSpecification<T> implements Specification<T> {
         return builder.and(predicates.toArray(new Predicate[0]));
     }
 
-    private Pair<Integer, Integer> getIntPair(String rangeValues) {
+    /**
+     * Convert list of generic type to specified data type in function.
+     *
+     * @param from list to be converted
+     * @param func lambda function example: s -> Integer::valueOf
+     * @param <T>  from T data type
+     * @param <U>  to U data type
+     * @return
+     */
+    public static <T, U> List<U> convertList(List<T> from, Function<T, U> func) {
+        return from.stream().map(func).collect(toList());
+    }
+
+    protected Predicate betweenDatePair(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        Pair<Date, Date> datePair = DateUtil.getDatePair((String) criteria.getPair().getValue());
+        if (nonNull(datePair)) {
+            return builder.between(
+                root.get(criteria.getPair().getKey()).as(Date.class), datePair.getLeft(), datePair.getRight());
+        }
+        return null;
+    }
+
+    protected Predicate betweenIntPair(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        Pair<Integer, Integer> intPair = getIntPair((String) criteria.getPair().getValue());
+        if (nonNull(intPair)) {
+            return builder.between(root.get(criteria.getPair().getKey()), intPair.getLeft(), intPair.getRight());
+        }
+        return null;
+    }
+
+    protected Predicate matchEnd(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        return builder.like(
+            builder.lower(root.get(criteria.getPair().getKey())),
+            criteria.getPair().getValue().toString().toLowerCase() + "%");
+    }
+
+    protected Predicate matchStart(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        return builder.like(
+            builder.lower(root.get(criteria.getPair().getKey())),
+            "%" + criteria.getPair().getValue().toString().toLowerCase());
+    }
+
+    protected Predicate match(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        return builder.like(
+            builder.lower(root.get(criteria.getPair().getKey())),
+            "%" + criteria.getPair().getValue().toString().toLowerCase() + "%");
+    }
+
+    protected Predicate notEqual(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        if (criteria.getPair().getValue() instanceof Date) {
+            return builder.notEqual(root.get(criteria.getPair().getKey()).as(Date.class),
+                criteria.getPair().getValue());
+        } else {
+            return builder.notEqual(root.get(criteria.getPair().getKey()),
+                criteria.getPair().getValue().toString());
+        }
+    }
+
+    protected Predicate lessThanOrEqualTo(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        if (criteria.getPair().getValue() instanceof Date) {
+            return builder.lessThanOrEqualTo(root.get(criteria.getPair().getKey()).as(Date.class),
+                (Date) criteria.getPair().getValue());
+        } else {
+            return builder.lessThanOrEqualTo(root.get(criteria.getPair().getKey()),
+                criteria.getPair().getValue().toString());
+        }
+    }
+
+    protected Predicate greaterThanOrEqualTo(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        if (criteria.getPair().getValue() instanceof Date) {
+            return builder.greaterThanOrEqualTo(root.get(criteria.getPair().getKey()).as(Date.class),
+                (Date) criteria.getPair().getValue());
+        } else {
+            return builder.greaterThanOrEqualTo(root.get(criteria.getPair().getKey()),
+                criteria.getPair().getValue().toString());
+        }
+    }
+
+    protected Predicate lessThan(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        if (criteria.getPair().getValue() instanceof Date) {
+            return builder.lessThan(root.get(criteria.getPair().getKey()).as(Date.class),
+                (Date) criteria.getPair().getValue());
+        } else {
+            return builder.lessThan(root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString());
+        }
+    }
+
+    protected Predicate greaterThan(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        if (criteria.getPair().getValue() instanceof Date) {
+            return builder.greaterThan(root.get(criteria.getPair().getKey()).as(Date.class),
+                (Date) criteria.getPair().getValue());
+        } else {
+            return builder.greaterThan(root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString());
+        }
+    }
+
+    protected Predicate equalTo(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        if (criteria.getPair().getValue() instanceof Date) {
+            return builder.equal(root.get(criteria.getPair().getKey()).as(Date.class),
+                (Date) criteria.getPair().getValue());
+        } else {
+            return builder.equal(root.get(criteria.getPair().getKey()), criteria.getPair().getValue().toString());
+        }
+    }
+
+    protected Predicate in(Root<T> root, CriteriaBuilder builder, SearchCriteria criteria) {
+        return root.get(criteria.getPair().getKey()).in(criteria.getPair().getValue());
+    }
+
+    protected Pair<Integer, Integer> getIntPair(String rangeValues) {
         String[] values = new String[2];
         if (nonNull(rangeValues)) {
             values = StringUtils.split(rangeValues, ",", 2);
         }
         return values.length == 2 ? Pair.of(Integer.parseInt(values[0]), Integer.parseInt(values[1])) : null;
-    }
-
-    private Pair<Date, Date> getDatePair(String rangeValues) throws ParseException {
-        String[] values = new String[2];
-        if (nonNull(rangeValues)) {
-            values = StringUtils.split(rangeValues, ",", 2);
-        }
-        return values.length == 2 ? Pair.of(toDate(values[0], DateUtil.FORMAT), toDate(values[1], DateUtil.FORMAT)) : null;
     }
 
 }
