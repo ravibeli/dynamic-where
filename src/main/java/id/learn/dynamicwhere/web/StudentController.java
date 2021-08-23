@@ -13,12 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Project Name     : dynamic-where
- * Date Time        : 6/10/2020
- *
- * @author Teten Nugraha
- */
 
 @RestController
 @RequestMapping("/student")
