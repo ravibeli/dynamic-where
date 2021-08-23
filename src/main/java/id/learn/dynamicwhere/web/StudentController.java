@@ -32,7 +32,7 @@ public class StudentController {
         return studentService.findAll();
     }
 
-    @GetMapping("/withDynamicSearch")
+    @GetMapping("/search")
     public List<Student> withDynamicSearch(@RequestParam(value = "address", required = false) String address,
                                            @RequestParam(value = "age", required = false) Integer age,
                                            @RequestParam(value = "ageRange", required = false) String ageRange,
