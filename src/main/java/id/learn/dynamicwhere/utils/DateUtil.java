@@ -5,6 +5,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import lombok.experimental.UtilityClass;
+import org.apache.commons.lang3.tuple.Pair;
 
 /**
  * @author Ravikumar.Beli@blueyonder.com
@@ -21,5 +22,10 @@ public class DateUtil {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format);
         LocalDateTime date = LocalDateTime.parse(dateStr, formatter);
         return Date.from(date.atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    public static Pair<Date, Date> getDatePair(String value) {
+        return Pair.of(toDate(value.split(",")[0], FORMAT),
+                toDate(value.split(",")[1], FORMAT));
     }
 }

@@ -18,5 +18,6 @@ public enum SearchOperation {
     MATCH_START,
     MATCH_END,
     BETWEEN_INT,
-    BETWEEN_DATES
+    BETWEEN_DATES,
+    IN
 }
