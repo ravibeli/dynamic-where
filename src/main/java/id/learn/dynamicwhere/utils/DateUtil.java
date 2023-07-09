@@ -8,7 +8,7 @@ import lombok.experimental.UtilityClass;
 import org.apache.commons.lang3.tuple.Pair;
 
 /**
- * @author Ravikumar.Beli@blueyonder.com
+ * @author ravibeli@gmail.com
  * @project spring-data-jpa-dynamic-where
  * @created on 16 Aug, 2021 7:45 AM
  **/
